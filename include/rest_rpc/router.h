@@ -117,8 +117,7 @@ namespace rest_rpc
                     auto          it = map_invokers_.find(key);
                     if (it == map_invokers_.end())
                     {
-                        result = codec.pack_args_str(
-                            result_code::FAIL, "unknown function: " + get_name_by_key(key));
+                        result          = codec.pack_args_str(result_code::FAIL, "unknown function: " + get_name_by_key(key));
                         route_result.ec = router_error::no_such_function;
                     } else
                     {
@@ -128,15 +127,12 @@ namespace rest_rpc
                 } catch (const std::exception& ex)
                 {
                     msgpack_codec codec;
-                    result          = codec.pack_args_str(result_code::FAIL,
-                                 std::string("exception occur when call").append(ex.what()));
+                    result          = codec.pack_args_str(result_code::FAIL, std::string("exception occur when call").append(ex.what()));
                     route_result.ec = router_error::has_exception;
                 } catch (...)
                 {
                     msgpack_codec codec;
-                    result          = codec.pack_args_str(result_code::FAIL,
-                                 std::string("unknown exception occur when call ")
-                                     .append(get_name_by_key(key)));
+                    result = codec.pack_args_str(result_code::FAIL, std::string("unknown exception occur when call ").append(get_name_by_key(key)));
                     route_result.ec = router_error::no_such_function;
                 }
 
@@ -152,71 +148,57 @@ namespace rest_rpc
             router(router&&)      = delete;
 
             template<typename F, size_t... I, typename... Args>
-            static typename std::result_of<F(std::weak_ptr<connection>, Args...)>::type call_helper(
-                const F& f, const nonstd::index_sequence<I...>&, std::tuple<Args...> tup,
-                std::weak_ptr<connection> ptr)
+            static typename std::invoke_result<F(std::weak_ptr<connection>, Args...)>::type call_helper(
+                const F& f, const nonstd::index_sequence<I...>&, std::tuple<Args...> tup, std::weak_ptr<connection> ptr)
             {
                 return f(ptr, std::move(std::get<I>(tup))...);
             }
 
             template<typename F, typename... Args>
-            static typename std::enable_if<std::is_void<
-                typename std::result_of<F(std::weak_ptr<connection>, Args...)>::type>::value>::type
-            call(const F& f, std::weak_ptr<connection> ptr, std::string& result,
-                std::tuple<Args...> tp)
+            static typename std::enable_if<std::is_void<typename std::invoke_result<F(std::weak_ptr<connection>, Args...)>::type>::value>::type call(
+                const F& f, std::weak_ptr<connection> ptr, std::string& result, std::tuple<Args...> tp)
             {
                 call_helper(f, nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
                 result = msgpack_codec::pack_args_str(result_code::OK);
             }
 
             template<typename F, typename... Args>
-            static typename std::enable_if<!std::is_void<
-                typename std::result_of<F(std::weak_ptr<connection>, Args...)>::type>::value>::type
-            call(const F& f, std::weak_ptr<connection> ptr, std::string& result,
-                std::tuple<Args...> tp)
+            static typename std::enable_if<!std::is_void<typename std::invoke_result_t<F(std::weak_ptr<connection>, Args...)>>::value>::type call(
+                const F& f, std::weak_ptr<connection> ptr, std::string& result, std::tuple<Args...> tp)
             {
-                auto r = call_helper(
-                    f, nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
+                auto          r = call_helper(f, nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
                 msgpack_codec codec;
                 result = msgpack_codec::pack_args_str(result_code::OK, r);
             }
 
             template<typename F, typename Self, size_t... Indexes, typename... Args>
-            static typename std::result_of<F(Self, std::weak_ptr<connection>, Args...)>::type
-            call_member_helper(const F& f, Self* self, const nonstd::index_sequence<Indexes...>&,
-                std::tuple<Args...>       tup,
+            static typename std::invoke_result_t<F, Self*, std::weak_ptr<connection>, Args...> call_member_helper(const F& f, Self* self,
+                const nonstd::index_sequence<Indexes...>&, std::tuple<Args...>                                                      tup,
                 std::weak_ptr<connection> ptr = std::shared_ptr<connection>{nullptr})
             {
                 return (*self.*f)(ptr, std::move(std::get<Indexes>(tup))...);
             }
 
             template<typename F, typename Self, typename... Args>
-            static typename std::enable_if<std::is_void<typename std::result_of<F(
-                Self, std::weak_ptr<connection>, Args...)>::type>::value>::type
-            call_member(const F& f, Self* self, std::weak_ptr<connection> ptr, std::string& result,
-                std::tuple<Args...> tp)
+            static typename std::enable_if<std::is_void<typename std::invoke_result_t<F, Self*, std::weak_ptr<connection>, Args...>>::value>::type
+            call_member(const F& f, Self* self, std::weak_ptr<connection> ptr, std::string& result, std::tuple<Args...> tp)
             {
-                call_member_helper(f, self, typename nonstd::make_index_sequence<sizeof...(Args)>{},
-                    std::move(tp), ptr);
+                call_member_helper(f, self, typename nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
                 result = msgpack_codec::pack_args_str(result_code::OK);
             }
 
             template<typename F, typename Self, typename... Args>
-            static typename std::enable_if<!std::is_void<typename std::result_of<F(
-                Self, std::weak_ptr<connection>, Args...)>::type>::value>::type
-            call_member(const F& f, Self* self, std::weak_ptr<connection> ptr, std::string& result,
-                std::tuple<Args...> tp)
+            static typename std::enable_if<!std::is_void<typename std::invoke_result_t<F, Self*, std::weak_ptr<connection>, Args...>>::value>::type
+            call_member(const F& f, Self* self, std::weak_ptr<connection> ptr, std::string& result, std::tuple<Args...> tp)
             {
-                auto r = call_member_helper(f, self,
-                    typename nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
+                auto r = call_member_helper(f, self, typename nonstd::make_index_sequence<sizeof...(Args)>{}, std::move(tp), ptr);
                 result = msgpack_codec::pack_args_str(result_code::OK, r);
             }
 
             template<bool is_pub, typename Function>
             void register_nonmember_func(uint32_t key, Function f)
             {
-                this->map_invokers_[key] = [f](std::weak_ptr<connection> conn,
-                                               nonstd::string_view str, std::string& result) {
+                this->map_invokers_[key] = [f](std::weak_ptr<connection> conn, nonstd::string_view str, std::string& result) {
                     using args_tuple = typename function_traits<Function>::bare_tuple_type;
                     msgpack_codec codec;
                     try
@@ -237,8 +219,7 @@ namespace rest_rpc
             template<bool is_pub, typename Function, typename Self>
             void register_member_func(uint32_t key, const Function& f, Self* self)
             {
-                this->map_invokers_[key] = [f, self](std::weak_ptr<connection> conn,
-                                               nonstd::string_view str, std::string& result) {
+                this->map_invokers_[key] = [f, self](std::weak_ptr<connection> conn, nonstd::string_view str, std::string& result) {
                     using args_tuple = typename function_traits<Function>::bare_tuple_type;
                     msgpack_codec codec;
                     try
@@ -256,10 +237,8 @@ namespace rest_rpc
                 };
             }
 
-            std::unordered_map<uint32_t,
-                std::function<void(std::weak_ptr<connection>, nonstd::string_view, std::string&)>>
-                                                      map_invokers_;
-            std::unordered_map<uint32_t, std::string> key2func_name_;
+            std::unordered_map<uint32_t, std::function<void(std::weak_ptr<connection>, nonstd::string_view, std::string&)>> map_invokers_;
+            std::unordered_map<uint32_t, std::string>                                                                       key2func_name_;
 
             std::shared_mutex mutex_;
         };

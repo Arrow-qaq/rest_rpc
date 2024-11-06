@@ -24,13 +24,12 @@ namespace rest_rpc
             std::string key_file;
         };
 
-        class connection : public std::enable_shared_from_this<connection>,
-                           private asio::noncopyable
+        class connection : public std::enable_shared_from_this<connection>, private asio::noncopyable
         {
         public:
             connection(asio::io_service& io_service, std::size_t timeout_seconds, router& router)
-                : socket_(io_service), body_(INIT_BUF_SIZE), timer_(io_service),
-                  timeout_seconds_(timeout_seconds), has_closed_(false), router_(router)
+                : socket_(io_service), body_(INIT_BUF_SIZE), timer_(io_service), timeout_seconds_(timeout_seconds), has_closed_(false),
+                  router_(router)
             { }
 
             ~connection() { close(); }
@@ -52,8 +51,7 @@ namespace rest_rpc
 
             uint64_t request_id() const { return req_id_; }
 
-            void response(
-                uint64_t req_id, std::string data, request_type req_type = request_type::req_res)
+            void response(uint64_t req_id, std::string data, request_type req_type = request_type::req_res)
             {
                 assert(data.size() < MAX_BUF_LEN);
                 auto                      sp_data = std::make_shared<std::string>(std::move(data));
@@ -121,33 +119,22 @@ namespace rest_rpc
                 response(0, std::move(result), request_type::sub_pub);
             }
 
-            void set_callback(
-                std::function<void(std::string, std::string, std::weak_ptr<connection>)> callback)
-            {
-                callback_ = std::move(callback);
-            }
+            void set_callback(std::function<void(std::string, std::string, std::weak_ptr<connection>)> callback) { callback_ = std::move(callback); }
 
             void set_delay(bool delay) { delay_ = delay; }
 
-            void on_network_error(
-                std::function<void(std::shared_ptr<connection>, std::string)>& on_net_err)
-            {
-                on_net_err_ = &on_net_err;
-            }
+            void on_network_error(std::function<void(std::shared_ptr<connection>, std::string)>& on_net_err) { on_net_err_ = &on_net_err; }
 
             void init_ssl_context(const ssl_configure& ssl_conf)
             {
 #ifdef CINATRA_ENABLE_SSL
-                unsigned long ssl_options = asio::ssl::context::default_workarounds |
-                    asio::ssl::context::no_sslv2 | asio::ssl::context::single_dh_use;
+                unsigned long ssl_options =
+                    asio::ssl::context::default_workarounds | asio::ssl::context::no_sslv2 | asio::ssl::context::single_dh_use;
                 try
                 {
                     asio::ssl::context ssl_context(asio::ssl::context::sslv23);
                     ssl_context.set_options(ssl_options);
-                    ssl_context.set_password_callback(
-                        [](std::size_t size, asio::ssl::context_base::password_purpose purpose) {
-                            return "123456";
-                        });
+                    ssl_context.set_password_callback([](std::size_t size, asio::ssl::context_base::password_purpose purpose) { return "123456"; });
 
                     asio::error_code ec;
                     if (rpcfs::exists(ssl_conf.cert_file, ec))
@@ -156,12 +143,10 @@ namespace rest_rpc
                     }
 
                     if (rpcfs::exists(ssl_conf.key_file, ec))
-                        ssl_context.use_private_key_file(
-                            ssl_conf.key_file, asio::ssl::context::pem);
+                        ssl_context.use_private_key_file(ssl_conf.key_file, asio::ssl::context::pem);
 
                     // ssl_context_callback(ssl_context);
-                    ssl_stream_ = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket&>>(
-                        socket_, ssl_context);
+                    ssl_stream_ = std::make_unique<asio::ssl::stream<asio::ip::tcp::socket&>>(socket_, ssl_context);
                 } catch (const std::exception& e)
                 {
                     print(e);
@@ -251,21 +236,22 @@ namespace rest_rpc
 
                     if (!ec)
                     {
+                        const auto& req_id = req_id_;
+                        const auto& body   = body_;
+
                         read_head();
+
                         if (req_type_ == request_type::req_res)
                         {
-                            const auto& req_id = req_id_;
-                            ThreadPool::run([this, func_id, length, req_id] {
-                                route_result_t ret = router_.route<connection>(func_id,
-                                    nonstd::string_view{body_.data(), length},
-                                    this->shared_from_this());
+                            ThreadPool::run([this, func_id, length, req_id, body] {
+                                route_result_t ret =
+                                    router_.route<connection>(func_id, nonstd::string_view{body.data(), length}, this->shared_from_this());
                                 if (delay_)
                                 {
                                     delay_ = false;
                                 } else
                                 {
-                                    response_interal(req_id,
-                                        std::make_shared<std::string>(std::move(ret.result)));
+                                    response_interal(req_id, std::make_shared<std::string>(std::move(ret.result)));
                                 }
                             });    // async call
 
@@ -274,10 +260,8 @@ namespace rest_rpc
                             try
                             {
                                 msgpack_codec codec;
-                                auto p = codec.unpack<std::tuple<std::string, std::string>>(
-                                    body_.data(), length);
-                                callback_(std::move(std::get<0>(p)), std::move(std::get<1>(p)),
-                                    this->shared_from_this());
+                                auto          p = codec.unpack<std::tuple<std::string, std::string>>(body.data(), length);
+                                callback_(std::move(std::get<0>(p)), std::move(std::get<1>(p)), this->shared_from_this());
                             } catch (const std::exception& ex)
                             {
                                 print(ex);
@@ -297,8 +281,7 @@ namespace rest_rpc
                 });
             }
 
-            void response_interal(uint64_t req_id, std::shared_ptr<std::string> data,
-                request_type req_type = request_type::req_res)
+            void response_interal(uint64_t req_id, std::shared_ptr<std::string> data, request_type req_type = request_type::req_res)
             {
                 assert(data->size() < MAX_BUF_LEN);
 
@@ -326,9 +309,7 @@ namespace rest_rpc
                 write_buffers[1] = asio::buffer(msg.content->data(), write_size_);
 
                 auto self = this->shared_from_this();
-                async_write(write_buffers, [this, self](asio::error_code ec, std::size_t length) {
-                    on_write(ec, length);
-                });
+                async_write(write_buffers, [this, self](asio::error_code ec, std::size_t length) { on_write(ec, length); });
             }
 
             void on_write(asio::error_code ec, std::size_t length)
@@ -361,22 +342,21 @@ namespace rest_rpc
             {
 #ifdef CINATRA_ENABLE_SSL
                 auto self = this->shared_from_this();
-                ssl_stream_->async_handshake(
-                    asio::ssl::stream_base::server, [this, self](const asio::error_code& error) {
-                        if (error)
+                ssl_stream_->async_handshake(asio::ssl::stream_base::server, [this, self](const asio::error_code& error) {
+                    if (error)
+                    {
+                        print(error);
+                        if (on_net_err_)
                         {
-                            print(error);
-                            if (on_net_err_)
-                            {
-                                (*on_net_err_)(self, error.message());
-                            }
-                            close();
-                            return;
+                            (*on_net_err_)(self, error.message());
                         }
+                        close();
+                        return;
+                    }
 
-                        has_shake_ = true;
-                        read_head();
-                    });
+                    has_shake_ = true;
+                    read_head();
+                });
 #endif
             }
 
@@ -395,8 +375,7 @@ namespace rest_rpc
                 if (is_ssl())
                 {
 #ifdef CINATRA_ENABLE_SSL
-                    asio::async_read(
-                        *ssl_stream_, asio::buffer(head_, HEAD_LEN), std::move(handler));
+                    asio::async_read(*ssl_stream_, asio::buffer(head_, HEAD_LEN), std::move(handler));
 #endif
                 } else
                 {
@@ -410,13 +389,11 @@ namespace rest_rpc
                 if (is_ssl())
                 {
 #ifdef CINATRA_ENABLE_SSL
-                    asio::async_read(
-                        *ssl_stream_, asio::buffer(body_.data(), size_to_read), std::move(handler));
+                    asio::async_read(*ssl_stream_, asio::buffer(body_.data(), size_to_read), std::move(handler));
 #endif
                 } else
                 {
-                    asio::async_read(
-                        socket_, asio::buffer(body_.data(), size_to_read), std::move(handler));
+                    asio::async_read(socket_, asio::buffer(body_.data(), size_to_read), std::move(handler));
                 }
             }
 
@@ -526,10 +503,10 @@ namespace rest_rpc
             std::mutex                                                               write_mtx_;
             std::deque<message_type>                                                 write_queue_;
             std::function<void(std::string, std::string, std::weak_ptr<connection>)> callback_;
-            std::function<void(std::shared_ptr<connection>, std::string)>* on_net_err_ = nullptr;
-            router&                                                        router_;
-            nonstd::any                                                    user_data_;
-            bool                                                           delay_ = false;
+            std::function<void(std::shared_ptr<connection>, std::string)>*           on_net_err_ = nullptr;
+            router&                                                                  router_;
+            nonstd::any                                                              user_data_;
+            bool                                                                     delay_ = false;
         };
     }    // namespace rpc_service
 }    // namespace rest_rpc
